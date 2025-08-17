@@ -1,7 +1,8 @@
 
-const KEY="discipline30_v3";
+const KEY="discipline30_v5";
 const SETTINGS={
   programDaysTotal:180, phaseLength:30, startDate:null,
+  phasesStarted:[true,false,false,false,false,false], // v3: manual starts
   weeklyPlan:{
     "Mon":["Run / Run-Walk","Yoga / Mobility (15–20m)"],
     "Tue":["Strength (20–30m)"],
@@ -20,10 +21,10 @@ const SETTINGS={
     {name:"Read 20+ minutes",key:"read",optional:false},
     {name:"Complete Writing Task",key:"write",optional:false},
     {name:"List one positive thing",key:"positive",optional:false},
-    {name:'Compliment Angela / Say "I love you"',key:"angela",optional:false},
     {name:"PCS/Admin Task (Mon–Fri, optional)",key:"pcs",optional:true,onlyWeekdays:true},
     {name:"Text something nice to Bella (optional)",key:"bella",optional:true,onlySunday:true}
-  ]
+  ],
+  theme:"zen" // zen | mid | dark
 };
 
 function load(){
@@ -44,6 +45,13 @@ function dayNumber(startISO, today){
 }
 function phaseOfDay(n,len){ return Math.ceil(n/len); }
 let STATE = load();
+applyTheme();
+
+function applyTheme(){
+  document.body.classList.remove("theme-dark","theme-mid");
+  if(STATE.settings.theme==="dark") document.body.classList.add("theme-dark");
+  if(STATE.settings.theme==="mid") document.body.classList.add("theme-mid");
+}
 
 function todayAnchors(date){
   const dow=date.getDay();
@@ -56,24 +64,47 @@ function todayAnchors(date){
   return list;
 }
 
+function startedPhaseCount(){ return STATE.settings.phasesStarted.filter(Boolean).length; }
+function effectiveDayNum(rawDay){
+  const cap = startedPhaseCount() * STATE.settings.phaseLength;
+  return Math.min(rawDay, cap===0?1:cap);
+}
+
+function renderPhaseDashboard(dayNum){
+  const pills=document.getElementById("phasePills"); pills.innerHTML="";
+  const total=STATE.settings.programDaysTotal;
+  const len=STATE.settings.phaseLength;
+  const currentPhase=Math.ceil(dayNum/len);
+  for(let i=1;i<=total/len;i++){
+    const span=document.createElement("div");
+    span.className="phase-pill"+(i===currentPhase?" active":"");
+    span.textContent=`P${i}`;
+    span.addEventListener("click",()=>{ previewPhase=i; renderCalendar(); });
+    pills.appendChild(span);
+  }
+}
+
 function render(){
+  applyTheme();
   const s=STATE.settings;
   const logs=STATE.logs;
   const today=new Date();
-  const key=dateKey(today);
-  const dowLong=today.toLocaleDateString(undefined,{weekday:'long'});
-  const dowShort=today.toLocaleDateString(undefined,{weekday:'short'});
-  const dayNum=dayNumber(s.startDate,today);
+  const rawDay=dayNumber(s.startDate,today);
+  const dayNum=effectiveDayNum(rawDay);
   const phaseNum=phaseOfDay(dayNum,s.phaseLength);
   document.getElementById("dayInfo").textContent=`Phase ${phaseNum} · Day ${((dayNum-1)%s.phaseLength)+1} / ${s.phaseLength}`;
+  const dowLong=today.toLocaleDateString(undefined,{weekday:'long'});
+  const dowShort=today.toLocaleDateString(undefined,{weekday:'short'});
   document.getElementById("dowBadge").textContent=dowLong;
-  // progress bar width
+  // progress bar
   const pct=((dayNum-1)%s.phaseLength+1)/s.phaseLength*100;
   document.getElementById("progressBar").style.width=`${pct}%`;
+  renderPhaseDashboard(dayNum);
 
+  const key=dateKey(today);
   const rec = logs[key] || (logs[key]={anchors:{},plan:{},note:"",completed:false});
 
-  // Build daily anchors list
+  // Build anchors list
   const list = todayAnchors(today);
   const box = document.getElementById("dailyList"); box.innerHTML="";
   list.forEach((a,i)=>{
@@ -88,7 +119,7 @@ function render(){
     box.appendChild(li);
   });
 
-  // Build today's plan
+  // Today's plan
   const planBox=document.getElementById("planList"); planBox.innerHTML="";
   const plan = (s.weeklyPlan[dowShort] || s.weeklyPlan[dowLong]) || [];
   plan.forEach((name, idx)=>{
@@ -107,6 +138,61 @@ function render(){
   const note=document.getElementById("noteBox");
   note.value=rec.note||"";
   note.oninput=()=>{ rec.note = note.value; save(STATE); };
+
+  // Calendar for current/preview phase
+  renderCalendar();
+}
+
+let previewPhase=null;
+function renderCalendar(){
+  const s=STATE.settings;
+  const today=new Date();
+  const rawDay=dayNumber(s.startDate,today);
+  const effDay=effectiveDayNum(rawDay);
+  const currentPhase=Math.ceil(effDay/s.phaseLength);
+  const phase = previewPhase || currentPhase;
+  const cal = document.getElementById("calendar"); cal.innerHTML="";
+  for(let d=1; d<=s.phaseLength; d++){
+    const globalDay = (phase-1)*s.phaseLength + d;
+    const thisDate = new Date(new Date(s.startDate+"T00:00:00").getTime() + (globalDay-1)*24*3600*1000);
+    const key=dateKey(thisDate);
+    const rec = STATE.logs[key];
+    const cell=document.createElement("div"); cell.className="daycell";
+    cell.textContent = d;
+    if(rec && rec.completed) cell.classList.add("done");
+    else if(rec) cell.classList.add("missed");
+    cell.addEventListener("click",()=> openDayRecap(thisDate));
+    cal.appendChild(cell);
+  }
+}
+
+function openDayRecap(date){
+  // allow editing past day anchors & note
+  const key=dateKey(date);
+  const rec = STATE.logs[key] || (STATE.logs[key]={anchors:{},plan:{},note:"",completed:false});
+  // Build recap view
+  const list = todayAnchors(date);
+  const cont=document.getElementById("recapList"); cont.innerHTML="";
+  list.forEach(a=>{
+    const id=`a_${a.key}`;
+    const row=document.createElement("div");
+    const ok = !!rec.anchors[id];
+    row.textContent = `${ok?"✓":"○"}  ${a.name}${a.optional?" (opt)":""}`;
+    row.style.cursor="pointer";
+    row.addEventListener("click",()=>{ rec.anchors[id]=!rec.anchors[id]; save(STATE); openDayRecap(date); });
+    cont.appendChild(row);
+  });
+  const pos=document.getElementById("recapPositive");
+  pos.value = rec.note || "";
+  document.getElementById("btnRecapSave").onclick = ()=>{
+    rec.note = pos.value;
+    rec.completed = list.every(a=> a.optional || rec.anchors[`a_${a.key}`]);
+    save(STATE);
+    closeRecap();
+    render();
+  };
+  document.getElementById("btnRecapEdit").onclick = closeRecap;
+  openRecap();
 }
 
 function requiredComplete(date){
@@ -119,38 +205,50 @@ function requiredComplete(date){
   return true;
 }
 
-function finishDay(){
+function highlightMissed(){
   const today=new Date();
-  const key=dateKey(today);
-  const rec=STATE.logs[key] || (STATE.logs[key]={anchors:{},plan:{},note:"",completed:false});
-  if(!requiredComplete(today)){
-    // show modal
-    document.getElementById("confirmModal").style.display="flex";
-    return;
-  }
-  // success
-  rec.completed=true; save(STATE);
-  handlePhaseTransitions(today);
+  const list=todayAnchors(today);
+  const rec=STATE.logs[dateKey(today)] || {anchors:{}};
+  const box=document.getElementById("dailyList");
+  const cards=[...box.children];
+  cards.forEach((card, idx)=>{
+    const a=list[idx];
+    const id=`a_${a.key}`;
+    card.classList.remove("warn");
+    if(!a.optional && !rec.anchors[id]) card.classList.add("warn");
+  });
 }
 
-function handlePhaseTransitions(today){
+function openConfirm(){ document.getElementById("confirmModal").style.display="flex"; }
+function closeConfirm(){ document.getElementById("confirmModal").style.display="none"; }
+function openRecap(){ document.getElementById("recapModal").style.display="flex"; }
+function closeRecap(){ document.getElementById("recapModal").style.display="none"; }
+
+function finishDay(){
+  const today=new Date();
+  if(!requiredComplete(today)){
+    highlightMissed();
+    openConfirm();
+    return;
+  }
+  // success recap
+  openDayRecap(today);
+}
+
+function handlePhaseGatingAfter(today){
   const s=STATE.settings;
-  const dayNum=dayNumber(s.startDate,today);
-  if(dayNum >= s.programDaysTotal){
-    alert("🏅 180 Day Discipline Medal Unlocked — beast mode.");
-    render(); return;
-  }
-  if(dayNum % s.phaseLength === 0){
-    const phaseNum = Math.ceil(dayNum / s.phaseLength);
-    if(confirm(`Phase ${phaseNum} complete. Move to Phase ${phaseNum+1}?`)){
-      alert("Phase advanced. Keep going.");
-    } else {
-      alert("Phase paused.");
+  const raw=dayNumber(s.startDate,today);
+  const eff=effectiveDayNum(raw);
+  if(eff % s.phaseLength === 0){
+    const curPhase = Math.ceil(eff / s.phaseLength);
+    const nextIdx = curPhase; // 0-based array index
+    if(nextIdx < s.phasesStarted.length && !s.phasesStarted[nextIdx]){
+      // ask to start next phase
+      const go = confirm(`🎉 Phase ${curPhase} complete!\n\nStart Phase ${curPhase+1} now?`);
+      if(go){ s.phasesStarted[nextIdx] = true; save(STATE); alert(`Phase ${curPhase+1} started.`); }
+      else { alert("You can start the next phase any time from here."); }
     }
-  } else {
-    alert("Day completed. See you tomorrow.");
   }
-  render();
 }
 
 function resetToday(){
@@ -159,31 +257,119 @@ function resetToday(){
   save(STATE); render();
 }
 function clearAll(){
-  if(confirm("Erase ALL saved data?")){ localStorage.removeItem(KEY); STATE=load(); render(); }
+  if(confirm("Erase ALL saved data?")){ localStorage.removeItem(KEY); STATE=load(); applyTheme(); render(); }
 }
 
+// Settings panel
+function openSettings(){
+  // Theme buttons
+  document.getElementById("themeZen").onclick=()=>{ STATE.settings.theme="zen"; save(STATE); applyTheme(); };
+  document.getElementById("themeMid").onclick=()=>{ STATE.settings.theme="mid"; save(STATE); applyTheme(); };
+  document.getElementById("themeDark").onclick=()=>{ STATE.settings.theme="dark"; save(STATE); applyTheme(); };
+
+  // Anchors list editor
+  const host=document.getElementById("settingsAnchors"); host.innerHTML="";
+  STATE.settings.anchors.forEach((a,idx)=>{
+    const row=document.createElement("div"); row.className="settings-row";
+    const name=document.createElement("input"); name.type="text"; name.value=a.name;
+    const tog=document.createElement("button"); tog.textContent=a.optional?"Optional":"Required"; tog.className="icon-btn";
+    const del=document.createElement("button"); del.textContent="Delete"; del.className="icon-btn";
+    tog.onclick=()=>{ a.optional=!a.optional; tog.textContent=a.optional?"Optional":"Required"; save(STATE); };
+    del.onclick=()=>{ STATE.settings.anchors.splice(idx,1); save(STATE); openSettings(); };
+    name.oninput=()=>{ a.name=name.value; save(STATE); };
+    row.appendChild(name); row.appendChild(tog); row.appendChild(del); host.appendChild(row);
+  });
+
+  // Add task controls
+  const newToggle=document.getElementById("newTaskToggle");
+  let newOptional=false;
+  newToggle.onclick=()=>{ newOptional=!newOptional; newToggle.textContent=newOptional?"Optional":"Required"; };
+
+  document.getElementById("btnAddTask").onclick=()=>{
+    const nm=document.getElementById("newTaskName").value.trim();
+    if(!nm) return;
+    const key = nm.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,16) + Math.floor(Math.random()*1000);
+    STATE.settings.anchors.push({name:nm,key,optional:newOptional});
+    document.getElementById("newTaskName").value=""; newOptional=false; newToggle.textContent="Required";
+    save(STATE); openSettings();
+  };
+
+  // Plans
+  const setVal=(id,arr)=>{ document.getElementById(id).value = (arr||[]).join(", "); };
+  const s=STATE.settings;
+  setVal("planMon", s.weeklyPlan["Mon"]);
+  setVal("planTue", s.weeklyPlan["Tue"]);
+  setVal("planWed", s.weeklyPlan["Wed"]);
+  setVal("planThu", s.weeklyPlan["Thu"]);
+  setVal("planFri", s.weeklyPlan["Fri"]);
+  setVal("planSat", s.weeklyPlan["Sat"]);
+  setVal("planSun", s.weeklyPlan["Sun"]);
+
+  document.getElementById("settingsModal").style.display="flex";
+}
+function saveSettings(){
+  const read=(id)=>document.getElementById(id).value.split(",").map(s=>s.trim()).filter(Boolean);
+  const s=STATE.settings;
+  s.weeklyPlan["Mon"]=read("planMon");
+  s.weeklyPlan["Tue"]=read("planTue");
+  s.weeklyPlan["Wed"]=read("planWed");
+  s.weeklyPlan["Thu"]=read("planThu");
+  s.weeklyPlan["Fri"]=read("planFri");
+  s.weeklyPlan["Sat"]=read("planSat");
+  s.weeklyPlan["Sun"]=read("planSun");
+  save(STATE);
+  document.getElementById("settingsModal").style.display="none";
+  render();
+}
+function closeSettings(){ document.getElementById("settingsModal").style.display="none"; }
+
+// Confirm modal actions
 window.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("btnFinish").addEventListener("click", finishDay);
   document.getElementById("btnReset").addEventListener("click", resetToday);
   document.getElementById("btnClear").addEventListener("click", clearAll);
-  document.getElementById("btnCompleteNow").addEventListener("click", ()=>{
-    document.getElementById("confirmModal").style.display="none";
-  });
+  document.getElementById("btnSettings").addEventListener("click", openSettings);
+  document.getElementById("btnSettingsCancel").addEventListener("click", closeSettings);
+  document.getElementById("btnSettingsSave").addEventListener("click", saveSettings);
+  document.getElementById("btnCompleteNow").addEventListener("click", closeConfirm);
   document.getElementById("btnContinueAnyway").addEventListener("click", ()=>{
-    document.getElementById("confirmModal").style.display="none";
-    const today=new Date();
-    const key=dateKey(today);
-    const rec=STATE.logs[key] || (STATE.logs[key]={anchors:{},plan:{},note:"",completed:false});
-    rec.completed=false; save(STATE);
-    // optional restart prompt
-    if(confirm("You missed a required anchor. Do you want to restart from Day 1?")){
-      const nowISO = new Date().toISOString().slice(0,10);
-      STATE={settings:{...STATE.settings, startDate: nowISO}, logs:{}};
-      save(STATE); alert("Restarted — back to Day 1. Let's roll.");
-    } else {
-      alert("Marked as incomplete. Try to win tomorrow.");
+    closeConfirm();
+    const choice = confirm("Mark today as partial and continue? (OK = Partial / Cancel = Keep editing)");
+    if(choice){
+      const today=new Date(); const key=dateKey(today);
+      const rec = STATE.logs[key] || (STATE.logs[key]={anchors:{},plan:{},note:"",completed:false});
+      rec.completed=false; save(STATE); render();
     }
-    render();
   });
+
+  // Tabs + swipe
+  const inner=document.getElementById("swipeInner");
+  const tTasks=document.getElementById("tabTasks");
+  const tCal=document.getElementById("tabCalendar");
+  const setTab = (idx)=>{
+    inner.style.transform = `translateX(${idx===0?0:-50}%)`;
+    tTasks.classList.toggle("active", idx===0);
+    tCal.classList.toggle("active", idx===1);
+  };
+  tTasks.onclick=()=>setTab(0);
+  tCal.onclick=()=>setTab(1);
+
+  // Touch swipe
+  let startX=0, cur=0;
+  inner.addEventListener("touchstart",(e)=>{ startX = e.touches[0].clientX; cur = inner.style.transform.includes("-50")?1:0; },{passive:true});
+  inner.addEventListener("touchmove",(e)=>{}, {passive:true});
+  inner.addEventListener("touchend",(e)=>{
+    const dx = e.changedTouches[0].clientX - startX;
+    if(dx < -40 && cur===0) setTab(1);
+    if(dx > 40 && cur===1) setTab(0);
+  });
+
   render();
+
+  // After recap save, gate next phase if applicable
+  document.getElementById("btnRecapSave").addEventListener("click", ()=>{
+    const today=new Date();
+    // small delay to allow render then gate
+    setTimeout(()=> handlePhaseGatingAfter(today), 50);
+  });
 });
