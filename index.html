@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>30 Day Discipline</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="theme-color" content="#0f1115">
+</head>
+<body>
+  <header>
+    <h1>30 Day Discipline</h1>
+    <div class="row">
+      <div class="day-pill" id="dayInfo">Phase … · Day …</div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="section-title">
+        <h2>Today</h2>
+        <div class="streak"><span id="dateLabel"></span> • <span id="completedBadge" class="badge">Not completed</span></div>
+      </div>
+      <div class="tiny">Add this page to your Home Screen to use it like an app. Your progress is saved privately on your device.</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Daily Anchors</h2>
+        <div class="badge">Required vs Optional</div>
+      </div>
+      <div class="tasks" id="dailyTasks"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Today's Plan</h2>
+        <div class="badge" id="dowBadge">—</div>
+      </div>
+      <div class="tasks" id="todayPlan"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Notes & Wins</h2>
+        <span class="muted">Jot one positive thing every day.</span>
+      </div>
+      <textarea class="note" id="noteBox" placeholder="Positive, lessons, quick reflections…"></textarea>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Controls</h2>
+        <span></span>
+      </div>
+      <div class="controls">
+        <button class="primary" id="btnFinish">Finish Day</button>
+        <button id="btnReset">Reset today</button>
+        <button id="btnClearAll">Erase all data</button>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+
+  <footer>
+    <div class="tiny">Built for you — offline, no accounts.</div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
